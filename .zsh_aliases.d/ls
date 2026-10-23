@@ -1,0 +1,21 @@
+# ls and lsd aliases
+
+LSD_BASIC_OPTIONS='--group-directories-first --color=always --sort=version -A'
+! gui_running && LSD_BASIC_OPTIONS+=' --icon=never --color=never'
+
+alias _ls=/usr/bin/ls
+
+alias ls="lsd $LSD_BASIC_OPTIONS" && unset LSD_BASIC_OPTIONS
+
+alias ll='ls -Nl --date=relative --size=short -I=.git'
+alias lld='ll -d'
+alias lls='ll --total-size --sort=size'
+alias llsd='lls -d'
+alias lt='ll --total-size --tree'
+alias lli='ll -i'
+alias lti='lt -i'
+alias -g lldate="--sort=time --date='+%a %d %b %Y, %H:%M'"
+
+# print how many files (TODO: remove after the hmf C program is finished)
+hmf() { find ${1:=.} -type f | wc -l }
+

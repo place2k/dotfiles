@@ -1,0 +1,49 @@
+# rsync aliases
+
+# base: rsync --progress --human-readable --archive --verbose --whole --atimes --xattrs --acls --hard-links --preallocate --partial
+alias _rs='rsync -Phav -WUXAH --preallocate --partial'
+
+# copy
+alias rscp=_rs
+
+# move
+rsmv() {
+  local DEST=$@[$#]
+  local SOURCES=${@:1:$(($# - 1))}
+
+  _rs --remove-source-files $SOURCES $DEST || return 1
+
+  for SRC in $SOURCES; do
+    find $SRC -depth -exec rmdir {} \;
+  done
+}
+
+# update
+alias rsup='_rs --update'
+
+# enhanced update
+alias rsupp='_rs --checksum --cc=auto'
+
+# sync
+alias rssy='rsup --del'
+
+# sync to phone
+rsph() {
+  local root=/mnt/phone/
+  local more_args=()
+
+  while [[ $1 == -* ]]; do
+    if [[ $1 == -sd ]]; then
+      root+=SD\ card/
+      shift
+    elif [[ $1 == -a ]]; then
+      tr ' ' '\n' <<< $2 | while read -r arg; do more_args+=($arg); done
+      shift 2
+    else
+      root+=Internal\ storage/
+    fi
+  done
+
+  hiprio rsync -Phavu -z --zt $NPROC --whole-file --inplace -U --no-H --no-l --del $more_args $1 "$root$2"
+}
+

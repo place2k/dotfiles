@@ -1,0 +1,283 @@
+# basic aliases — they are the most important ones
+
+alias rld='exec zsh -l' zshrc="$EDITOR $ZSHRC && rld" _sudo='/bin/sudo -B ' sudo='sudo -B  '
+unalias mv cp
+
+alias watch='watch -n1 --color --exec --precise ' viewrbl='tail -f /var/run/root-bkup/log' # view root-backup log
+
+#QDBUS_LOGOUT='qdbus org.kde.kglobalaccel /component/ksmserver org.kde.kglobalaccel.Component.invokeShortcut "Log Out Without Confirmation"'
+gui_running && alias logout='sudo sddm-logout' && alias _logout='builtin logout'
+#unset QDBUS_LOGOUT
+
+alias free='free -hw --si' freer='/bin/free -bw --si' swaps='cat /proc/swaps' # freer = free raw
+
+alias help='help ' grep-find='grep -Hrno'
+alias _df=/bin/df df='df -Th --sync' dfi='df -i'
+alias _du=/bin/du du='du -Phx' dus='du -s' duap='du --apparent-size' duaps='duap -s' du-root='sudo duaps /'
+
+alias modloaded='lsmod | grep'
+
+# it's repetitive like this so that chown is better grouped in the output of als and of alias search with either als or the alias builtin
+alias cow='sudo /usr/bin/chown' cow-me='cow paulo:paulo ' cowdir-me='cow paulo:paulo -R' cow-me-prev='cow paulo:paulo $_' cowdir-me-prev='cow paulo:paulo -R $_'
+alias cow-root='cow root:root' cowdir-root='cow root:root -R' cow-root-prev='cow root:root $_' cowdir-root-prev='cow root:root -R $_'
+
+alias _diff='/bin/diff' diff='diff --color=always -W 190 -r' up='uptime --pretty' dmesg='sudo dmesg -L=always | less +G'
+alias jctl='journalctl -e -o short-precise -b0 ' jctlf='jctl -f ' jctlk='jctl -k '
+
+alias q=' exit' c=' clear' lbf='lsblk -f' cs='sudo cryptsetup' sl='sudo scroll-lock.sh' ul=unlink
+
+alias -g G='| grep -i' GF='G -F' G-='G --' L='| less' xd='| xxd'
+alias -g WC='| wc' wcl='WC -l' wcc='WC -c' CLR=--color=always NOCLR=--color=never fmtsz='| numfmt --to=iec' DIR='$(dirname $_)'
+
+alias _xargs='/usr/bin/xargs' xargs='xargs -P0 -i% -r '
+
+alias py=python tc=touch stc='sudo tc' rmf='rm -f' rmr='rmf -r'
+
+alias _shred=/bin/shred shred-clear='_shred -zn1' shred="_shred -uzn1"
+
+# leading space character is needed to avoid saving this command line to the history
+alias stealth_mode_enabled='  [[ $HISTFILE == /dev/null ]]'
+alias stealth='   stealth_mode_enabled && echo "Stealth mode is already enabled." || HISTFILE=/dev/null'
+alias unstealth=' stealth_mode_enabled && rld || echo "Stealth mode is already disabled."'
+
+alias w='cd /mnt/ssd/work'
+alias mail='bat /var/mail/paulo'
+
+alias roosh="sudo $SHELL -c " zramctla='zramctl --output-all' susp='systemctl suspend'
+alias quietbg='setopt LOCAL_OPTIONS NO_NOTIFY NO_MONITOR' normlbg='unsetopt LOCAL_OPTIONS NO_NOTIFY NO_MONITOR' trans='trans -b'
+
+# hiprios = high priority (as the) superuser; hiprio is the unpriv version
+alias hiprios='sudo ionice -c1 -n0 nice --19 chrt -f 5 '  hiprio='ionice -c2 -n0 nice -0 ' loprio='ionice -c3 nice -19 '
+
+
+# ============================ complex aliases and argument-taking aliases, defined as functions ============================
+
+reprios() {
+  local pids=($1)
+  [[ ! $pids[1] =~ \d+ ]] && pids=($(pgrep $!))
+  for pid in $pids; do
+    sudo ionice -c1 -n0        -p $pid
+    sudo renice --priority -19 -p $pid
+    sudo chrt -p 15               $pid
+  done
+}
+
+reprio() {
+  local pids=($1)
+  [[ ! $pids[1] =~ \d+ ]] && pids=($(pgrep $!))
+  for pid in $pids; do
+    ionice -c2 -n0        -p $pid
+    renice --priority -10 -p $pid
+  done
+}
+
+
+pud() pushd $@ NUL
+pod() popd  $@ NUL
+
+helpsh() { bash -c "help $1" | less }
+
+locate()    {                     hiprio  plocate $@ | grep -v locale }
+locateNew() { hiprios updatedb && hiprios plocate $@ | grep -v locale }
+
+bring-dsktp-over() {
+  for file; do
+    cp /usr/share/applications/$file.desktop $HOME/.local/share/applications && $EDITOR $_/$file.desktop
+  done
+}
+
+kcopy() {
+  klip() { qdbus org.kde.klipper /klipper org.kde.klipper.klipper.setClipboardContents "$data" }
+  if [[ $# -eq 0 ]]; then
+    data="$(cat)"
+    klip
+  else
+    for data; do
+      [[ -f $data ]] && data="$(cat $data)"
+      klip
+    done
+  fi
+}
+
+mcd() {
+  if [[ $# -eq 0 ]]; then
+    return 1
+  elif [[ $# -eq 1 ]]; then
+    md $1 && cd $_
+  else
+    md $@ && pud $@
+  fi
+}
+
+sudo_mv() {
+  cp -rau $1 $2
+  sudo ul $1
+}
+
+tweakperms() {
+  if [[ $1 == -h || -z $1 ]]; then
+    echo "Usage: $funcstack[1] [FLAGS] [DIRECTORY]"
+    echo 'Flags:'
+    echo '-h         show this message and exit'
+    echo '-r         run find(1) as root'
+    echo '-i         make DIRECTORY world-inaccessible (with modes: dirs=700, files=600)'
+    echo '-u         respect umask'
+    echo '-d MODE    use MODE (octal or symbolic) for directories'
+    echo '-f MODE    use MODE (octal or symbolic) for files'
+    return 1
+  fi
+
+  local dir dmode=755 fmode=644 dmode_user fmode_user respect_umask=false
+  local -a find=(find)
+
+  while [[ $1 == -[a-z] ]]; do
+    case $1 in
+      -r) find+=(sudo find);;
+      -i) dmode=700 fmode=600;;
+      -u) respect_umask=true;;
+      -d) dmode_user=$2; shift;;
+      -f) fmode_user=$2; shift;;
+      *) echo "Invalid flag: $1. Run $funcstack[1] -h to see the valid flags." && return 1;;
+    esac
+    shift
+  done
+
+  test -n "$dmode_user" && dmode=$_
+  test -n "$fmode_user" && fmode=$_
+  dir=$1
+
+  if $respect_umask; then
+    umask() { eval mode=\$$1mode; qalc -t -b octal "0o$mode xor (0o$mode & 0o$(builtin umask))" }
+    dmode=$(umask d)
+    fmode=$(umask f)
+  fi
+
+  $find $dir -type d -exec chmod $dmode {} \; -o -type f -exec chmod $fmode {} \;
+}
+
+proc_cmd() {
+  [[ $# -eq 0 ]] && local args=(self) || local args=($@)
+  for pid in $args; do
+    [[ -d /proc/$pid ]] && tr '\0' ' ' </proc/$pid/cmdline || printf '%d: no such PID.' $pid >&2
+    echo
+  done
+}
+
+proc_find() {
+  local PROCS=($(ps aux))
+  local out=$(grep -P $1 <<< $PROCS[*] | grep -v grep)
+  if [[ -n $out ]]; then
+    echo ${PROCS[1]}
+    echo $out
+  else
+    echo "No process found." >&2
+    return 1
+  fi
+}
+
+view_func() {
+#  set -x
+  local fname=$1
+  local simple_view=false
+
+  [[ $1 == -s || $1 == --simple ]] && simple_view=true && fname=$2
+  [[ -z $fname ]] && fname=$funcstack[1] # this function's name
+
+  local origins=$(whence -v $fname)
+
+  [[ $fname != $funcstack[1] ]] && [[ $? -ne 0 || -z $origins || $origins != *is\ a\ shell\ function* ]] && echo "$fname: not a zsh function." >&2 && return 1
+
+  get_function_code() {
+    local code="$(sed -n ${fline}p $ffile)"
+    local internal_funcs_seen=0
+    local fline_end=$fline
+#    set -x
+
+    if [[ "$code" =~ "(function )?$fname\s*(\(\s*\))? \{\$" ]]; then
+      tail +$((fline+1)) $ffile | \
+        while read -r code_line; do
+#          set +x
+          code_line="$(sed -r 's/(.*})\s?#\s?.*$/\1/' <<< $code_line)"
+          printf -v code '%s\n%s' "$code" "$code_line"
+          ((++fline_end))
+#          set -x
+
+          if [[ "$code_line" =~ '\s*\{\s*$' || "$code_line" =~ '.*(\(\s*\))? \{$' ]]; then
+            ((++internal_funcs_seen))
+          elif [[ "$code_line" =~ '^\s*\}\s*$' ]]; then
+            if ((internal_funcs_seen)); then
+              ((--internal_funcs_seen))
+            elif [[ ! "$code_line" =~ '^.*\(\) \{' ]]; then
+              break
+            fi
+          fi
+        done
+    fi
+
+    printf '%d\0%s' $fline_end "$code"
+  }
+
+  local ffile="$(sed -E 's/^.* from (.*)$/\1/' <<< $origins)"
+  local ffilename=$(sed 's#'$HOME'#~#' <<< "$ffile")
+  local fline=$(grep -Ponm1 "^(function )?$fname(\(\))? " "$ffile" | cut -d: -f1)
+
+  get_function_code | IFS=$'\0' read -r fline_end fcode
+
+  (( fline == fline_end )) && local frange=$fline || local frange=$fline–$fline_end
+
+  if $simple_view; then
+    bat -pp --line-range $fline:$fline_end --file-name "$ffilename:$frange" $ffile
+  else
+    bat -l zsh --color=always --line-range $fline:$fline_end --file-name "$ffilename:$frange" $ffile
+  fi
+}
+
+repch() {
+  local c n s
+  [[ -z $1 ]] && return
+  c="$1" # quotes all around here in case $1 is a space char
+  n=${2:-10}
+  (( $#c > 1 )) && c="$c[1]"
+  while (( n-- > 0 )); do s+="$c"; done
+  echo "$s"
+}
+
+mktestprogram() {
+  if [[ ! -f /tmp/test.c ]]; then
+    cat << EOF > /tmp/test.c
+#include <stdio.h>
+
+int main(void)
+{
+  
+  return 0;
+}
+
+EOF
+  fi
+
+  $EDITOR /tmp/test.c && gcc -g -o /tmp/test{,.c} && /tmp/test
+}
+
+calc()   echo $(($@))
+bccalc() echo "$@" | bc -l
+
+# for gui programs
+asroot() { sudo env $(dbus-launch) $@ }
+
+# make m3u playlist file in the current directory
+makem3u() {
+  local fnames=($PWD)
+  local start=$PWD
+
+  [[ $# -gt 0 ]] && fnames=$@
+
+  for dir in $fnames; do
+    cd $dir
+    dir=$(basename $dir)
+    /bin/ls -I $dir.m3u -N > $dir.m3u8
+  done
+
+  cd $start
+}
+

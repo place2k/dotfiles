@@ -1,0 +1,107 @@
+# package management aliases
+
+alias pm="hiprio paru --color=always"
+
+alias pm-install='pm -Sy --noconfirm --needed'
+alias pm-refresh='pm -Sy'
+alias pm-upgrade='pm -Syu --noconfirm'
+
+# install a known upgraded version of a package
+alias pm-upinstall='pm -Sy --noconfirm'
+alias pm-download='pm -Sydw --noconfirm'
+alias pm-downgrade='sudo downgrade --ignore always --ala-only'
+alias pm-reinstall='pm -Sy --noconfirm'
+alias pm-remove='pm -Rcns --noconfirm'
+alias pm-delete='pm -R --noconfirm'
+alias pm-clear-cache='pm -Sc --noconfirm'
+alias pm-owner='pm -Qo'  
+alias pm-list='pm -Qs | less'
+alias pm-list-aur='pm -Qmq'
+alias pm-list-unneeded='pm -Qtdq'
+alias pm-list-upgrades='pm -Sy && pm -Qu'
+alias pm-list-recent="ll --timesort --ignore-glob=ALPM_DB_VERSION --reverse /var/lib/pacman/local | awk '{print \$5 \" \" \$6 \" \" \$7 \"  \" \$8}'"
+alias pm-depof='pactree -r '
+
+# The s is for 'safe'. These are safer options for analyzing PKGBUILD, cancel installation etc.
+alias pms-install='pm -Sy --needed'
+alias pms-install-local='pm -U --needed'
+alias pms-reinstall='pm -Sy'
+alias pms-remove='pm -Rcns'
+alias pm-remove-lock='sudo unlink /var/lib/pacman/db.lck'
+
+pm-search-remove()    { pm -Qqs $@ | pm-remove    - }
+pm-search-install()   { pm -Sqs $@ | pm-install   - }
+pm-search-reinstall() { pm -Qqs $@ | pm-reinstall - }
+
+pm-info()   { pm -Si $@ | less }
+pm-search() { pm -Ss $@ | less }
+pm-files()  { pm -Ql $@ | grep --color=always -v locale | less }
+
+# l for local
+pml-info()   { pm -Qi $@ | less }
+pml-search() { pm -Qs $@ | less }
+alias pml-install='pm -U --noconfirm --needed'
+alias pml-reinstall='pm -U --noconfirm'
+
+pm-getsrc() {
+  pud $HOME/.aur-build
+  pkgctl repo clone --protocol https $1 && pud $_
+
+  BUILDDIR=. makepkg -d --nobuild --skipinteg --skippgpcheck --noprepare
+
+  if [[ $2 == -p ]]; then
+    kate .
+    local KATE_PID=$(pgrep kate)
+    clear
+    echo 'Start editing now.'
+
+    while [[ -e /proc/$KATE_PID ]]; do sleep 0.1; done
+
+    read -qr '?Compile? (y/n) ' ANS
+    [[ $ANS == y ]] && makepkg -si
+    echo
+  fi
+
+  pod
+  pod
+}
+
+__pm_kernel() {
+  install()   { pm-install   $NAMES }
+  reinstall() { pm-reinstall $NAMES }
+  upgrade()   { pm-upinstall $NAMES }
+  remove()    { pm-remove    $NAMES }
+  getsrc()    { pm-getsrc    $NAME  }
+
+  typeset -r SUBFUNC=$1; typeset KTYPE NAME PKG; typeset -a NAMES; shift
+  typeset -a ARGS=($@); (( $# )) || ARGS=(linux)
+
+  for KTYPE in $ARGS; do
+    NAME=linux
+    [[ $KTYPE != linux ]] && NAME+=-$KTYPE
+    for N in $NAMES; do [[ $N == $NAME ]] && unset NAME && break; done
+    if [[ $NAME ]]; then
+      for PKG in ${NAME}{,-headers,-docs}; do
+        pacman -Qi $PKG BNUL && NAMES+=($_)
+      done
+    fi
+  done
+
+  [[ $#NAMES -eq 0 ]] && echo "No kernel to $SUBFUNC." >&2 && return 1
+  $SUBFUNC
+}
+
+__pm_kernel_info() {
+  local out="$(pacman -Qs linux GF local | sed 's/local\///' G '^linux')"
+  [[ $1 == -f ]] && echo "$out" || echo "$out" G -v firmware
+}
+
+
+alias pmk-install='__pm_kernel install'
+alias pmk-reinstall='__pm_kernel reinstall'
+alias pmk-download='__pm_kernel download'
+alias pmk-upgrade='__pm_kernel upgrade'
+alias pmk-remove='__pm_kernel remove'
+alias pmk-getsrc='__pm_kernel getsrc'
+alias pmk-info='__pm_kernel_info'
+

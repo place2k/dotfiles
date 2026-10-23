@@ -1,0 +1,135 @@
+# history file manipulation functions
+
+typeset -g TEMPHIST=/tmp/.hist
+
+__histerr() {
+  local caller=${funcstack[2]} err_reason
+
+  if [[ -z $HISTFILE ]]; then
+    err_reason='History file is unset.'
+  elif [[ ! -f $HISTFILE ]]; then
+    err_reason="History file doesn't exist"
+  elif stealth_mode_enabled; then
+    err_reason='Disable stealth mode first.'
+  fi
+
+  if [[ -n $err_reason ]]; then
+    echo "$caller: $err_reason"
+    return 1
+  fi
+}
+
+__histbkup_aux() {
+  local src
+  local dst
+  local hist=$HISTFILE
+  local old=/tmp/zsh_history.old
+
+  [[ $1 == swapped ]] && src=$old  && dst=$hist ||
+                         src=$hist && dst=$old
+
+  if ! [[ -f $dst || -f $src ]] || hashcmp -n $src $dst; then
+    cp $src $dst
+  fi
+}
+
+__histbkup() { __histbkup_aux }
+
+__reload_if_changed() {
+  if hashcmp -n $TEMPHIST $HISTFILE; then
+    __histbkup
+    mv $TEMPHIST $HISTFILE
+    rld
+  else
+    ul $TEMPHIST
+  fi
+}
+
+__hist_printlines() {
+  printline() {
+    printf "[#%05d %s] %s\n" \
+      $linenum \
+      $(date -d @$(cut -d: -f2 <<< "$line") +'%F %T') \
+      $(cut -d\; -f2- <<< $line)
+  }
+
+  lines_with_num() { printline; ((++linenum)) }
+  lines_wout_num() { [[ $line =~ ^[0-9]+$ ]] && linenum=$line && { read -r line || return 1 }; printline }
+
+  local linenum=$1 process_lines=lines_with_num
+  [[ -z $1 ]] && process_lines=lines_wout_num
+
+  sed -z 's/\\\n/\\/g' | while read -r line; do $process_lines; done | bat -pl zsh
+}
+
+hist_restbkup() { __histbkup_aux swapped }
+
+histcut() {
+  __histerr || return 1
+  __histbkup
+  # number of lines
+  [[ -z $1 ]] && local n=1 || local n=$1
+  for (( i=0; i<$n; i++ )); do
+    sed -i '$d' $HISTFILE
+  done
+  rld
+}
+
+histdel() {
+  __histerr || return 1
+  cp $HISTFILE $TEMPHIST
+  for pattern in $@; do
+    sed -ri "/$pattern/d" $TEMPHIST
+  done
+  __reload_if_changed
+}
+
+histlines() {
+  __histerr || return 1
+
+  local n total_lines=$(wc -l <$HISTFILE) linenum
+  [[ -z $1 ]] && n=1 || n=$1
+
+  linenum=$((total_lines - n))
+  (( linenum < 0 )) && linenum=0
+
+  tail -n$n $HISTFILE | __hist_printlines $linenum
+}
+
+_histfind() {
+  __histerr || 1
+  for pattern in $@; do
+    sed -rn "/$HLPREGEX$pattern/ {=; p}" $HISTFILE | __hist_printlines
+  done
+}
+
+_histedit() {
+  local sedexpr sep='|'
+
+  __histerr || return 1
+
+  if [[ -z $1 ]]; then
+    echo 'Usage: histedit [-d] [pattern] [replacement]'
+    echo '-d is only to be used if you want to delete all lines from history where [pattern] occurs.'
+    echo 'If -d is used and [pattern] is not specified, the last line is deleted'
+    echo '[pattern] is a regular expression supported by sed.'
+    echo '[replacement] is a string that should replace [pattern] in the history file, and is ignored if -d is used.'
+    return 1
+  elif [[ $1 == -d ]]; then
+    if [[ -z $2 ]]; then
+      sedexpr='$d'
+    else
+      sedexpr="$sep$2$sepd"
+    fi
+  else
+    sedexpr="s$sep$1$sep$2$sep"
+  fi
+
+  cp $HISTFILE $TEMPHIST
+  sed -i "$sedexpr" $TEMPHIST
+  __reload_if_changed
+}
+
+alias histfind=' _histfind'
+alias histedit=' _histedit'
+

@@ -1,0 +1,13 @@
+SHELL=/bin/zsh
+PATH=/usr/local/scripts:/usr/bin:/usr/local/bin
+GUI_RUNNING=true
+MAILTO=paulo
+START_HOURS_RANGE=8-22
+RANDOM_DELAY=0
+
+1   5  save-tasks-bkup  appdata-bkup todoist
+1   5  bw-vault-bkup    appdata-bkup bitwarden
+7  10  sysupgrade       konsole -e /usr/local/scripts/sysupgrade
+1  10  root-bkup        sudo root-bkup
+7   1  clear-mail       truncate -s0 /var/spool/mail/paulo
+7   1  prune-vim-view   prune-vim-view.sh
