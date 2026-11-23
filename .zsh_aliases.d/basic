@@ -1,7 +1,7 @@
 # basic aliases — they are the most important ones
 
 alias rld='exec zsh -l' zshrc="$EDITOR $ZSHRC && rld" _sudo='/bin/sudo -B ' sudo='sudo -B  '
-unalias mv cp
+unalias mv cp su
 
 alias watch='watch -n1 --color --exec --precise ' viewrbl='tail -f /var/run/root-bkup/log' # view root-backup log
 

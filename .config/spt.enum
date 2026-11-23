@@ -22,8 +22,8 @@
 21 pendrive-toggle.sh
 22 plasma-applets-bkup
 23 prune-vim-view.sh
-24 /
-25 /
+24 maxperf
+25 makepdf.sh
 26 root-bkup
 27 rsync.sh
 28 sddm-logout
